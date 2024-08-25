@@ -1,0 +1,190 @@
+---
+title: "Nucleic Acid Analysis"
+output: html_notebook
+---
+
+```{r}
+library("Biostrings")
+library("seqinr")
+library("adegenet")
+library("ape")
+library("ggtree")
+library("DECIPHER")
+library("viridis")
+library("ggplot2")
+library("ggtree")
+library("ggmsa")
+library("reshape2")
+
+getwd()
+setwd("D:/R Studio/Evidencia 2")
+
+# 1.- Analyze the SARS-CoV-2 sequences reported from the 20 countries with the highest reported cases.
+#-------------------------------------------------------------------------------- 1
+VirusCountries <- c( "ON503398", "OQ170945", "MZ413341", "OL989060", "MT270101", "OR857017","OQ130713","OQ804215","OR841443","OK041130","OR883981","MT478019","MZ902042",
+"ON532671","OQ954582","MW633906","OK356627","OR156995","MZ314345","OR240608")
+
+CountryNames <- c(
+  "United States", "China", "India", "France", "Germany",
+  "Brazil", "South Korea", "Japan", "Italy", "United Kingdom",
+  "Russia", "Turkey", "Spain", "Australia", "Vietnam",
+  "Argentina", "Netherlands", "Mexico", "Iran", "Indonesia"
+)
+
+seqVirus <- read.GenBank(VirusCountries)
+
+CountrySequence <- setNames(CountryNames, VirusCountries)
+
+
+# 2. Calculate the length of the sequences included
+#-------------------------------------------------------------------------------- 2
+DNAsize <- function(seqVirus) {
+ for (name in names(seqVirus)) {
+   sequence <- seqVirus[[name]]
+   size <- length(sequence)
+   print(paste("Size of the sequence", name, ":", size))
+ }
+}
+
+DNAsize(seqVirus)
+
+# Calling str, both cases yield the same result
+str(seqVirus)
+
+# 3. Calculate the length of the sequences included
+#------------------------------------------------------------------------------ 3
+write.dna(seqVirus,  file ="seqVirus.fasta", format = "fasta", append =
+            FALSE, nbcol = 6, colsep = " ", colw = 10)
+
+seqVirusNotAlign <- readDNAStringSet("seqVirus.fasta", format = "fasta")
+
+seqVirusNotAlign <- OrientNucleotides(seqVirusNotAlign) 
+
+seqVirusAlign <- AlignSeqs(seqVirusNotAlign)
+
+# Separate plots
+Compare <- function(seqVirusAlign, Mapping) {
+  num_seqs <- length(seqVirusAlign)
+  rows <- ceiling(num_seqs / 5)  
+  columns <- min(5, num_seqs)   
+  par(mfrow = c(rows, columns)) 
+  par(mar = c(6, 6, 2, 1))
+  for (i in seq_along(seqVirusAlign)) {
+    SequenceID <- names(seqVirusAlign)[i]
+    CountryName <- Mapping[SequenceID]
+    sequence <- as.character(seqVirusAlign[[i]])
+    cleaned_seq <- gsub("[^ATCG]", "", sequence)
+    nucleotides <- unlist(strsplit(cleaned_seq, ""))
+    
+    barplot(
+      table(nucleotides),
+      col = rainbow(length(table(nucleotides))),
+      main = paste("Composition of", CountryName, "-", SequenceID),
+      ylab = "Count",
+      xlab = "Nucleotides"
+    )
+  }
+}
+
+Compare(seqVirusAlign, CountrySequence)
+
+# Single plot
+CreateNucleotideDataFrame <- function(seqVirusAlign, Mapping) {
+  all_counts <- list()
+
+  for (i in seq_along(seqVirusAlign)) {
+    SequenceID <- names(seqVirusAlign)[i]
+    CountryName <- Mapping[SequenceID]
+    sequence <- as.character(seqVirusAlign[[i]])
+    cleaned_seq <- gsub("[^ATCG]", "", sequence) 
+    nucleotides <- unlist(strsplit(cleaned_seq, ""))
+
+    nucleotide_count <- table(nucleotides)
+
+    df <- data.frame(
+      Nucleotide = names(nucleotide_count),
+      Count = as.vector(nucleotide_count),
+      Country = CountryName,
+      SequenceID = SequenceID
+    )
+
+    all_counts[[i]] <- df
+  }
+
+  combined_df <- do.call(rbind, all_counts) 
+  return(combined_df)
+}
+
+df <- CreateNucleotideDataFrame(seqVirusAlign, CountrySequence)
+
+ggplot(df, aes(x = paste(Country, "-", SequenceID), y = Count, fill = Nucleotide)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Nucleotide Composition for All Sequences",
+       x = "Country - Sequence",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 4.- Add a global hierarchical analysis obtained from the sequences selected for study.
+#--------------------------------------------------------------------------------- 4
+writeXStringSet(seqVirusAlign, file="seqVirusAlign.fasta")
+
+virusAlign <- read.alignment("seqVirusAlign.fasta", format = "fasta")
+
+distance_matrix <- dist.alignment(virusAlign, matrix = "similarity")
+
+tree <- nj(distance_matrix)
+tree <- ladderize(tree)
+
+
+locus_names <- tree$tip.label
+country_labels <- sapply(locus_names, function(x) CountrySequence[x])
+custom_labels <- paste(locus_names, "-", country_labels)
+tree$tip.label = custom_labels
+
+g <- ggtree(tree)  +
+  geom_tiplab(size = 2) +
+  theme_tree2() +
+  labs(title = "Phylogenetic Tree with Hierarchical Analysis")
+
+print(g)
+
+
+```
+Are the variants very different between each country? Is SARS-CoV-2 different among the Asian, Hispanic, European, or African populations?
+Although all SARS-CoV-2 variants originate from the same source and share a similar genetic base, there are indeed differences among them. These differences are primarily due to mutations the virus acquires as it transmits and adapts to different geographic regions and populations.
+
+Even though the base virus (SARS-CoV-2) is the same, the variants predominant in specific regions or populations, such as Asian, Hispanic, European, or African, can differ due to the specific characteristics of these areas and the evolutionary pressures faced by the virus. However, these differences are not substantial enough to consider them completely distinct variants, as they retain a high genetic similarity due to their common origin.
+
+5.- Add a written interpretation of your graphs and conclusions according to the case study selected. Be sure to support your arguments with the readings you have made.
+The first graph (Single nucleotide base graph) shows the nucleotide composition (A, C, G, T) for different coronavirus sequences. Each bar represents a viral sequence and its nucleotide composition. It can be observed that the sequences present similar patterns of composition, with a predominance of nucleotides A and T over G and C in all presented cases. These similarities suggest a common evolutionary origin among these viral sequences, supporting the findings mentioned that human coronaviruses share an origin, which has evolved throughout the pandemic. These similarities are also reflected in the DNA base analysis. The predominance of A and T in these viruses could be related to their adaptation to specific hosts, such as humans. Nucleotide composition may influence codon usage and, in turn, the efficiency of viral replication, which could contribute to variability in transmissibility and pathogenicity observed in different strains and variants.
+
+This pattern of A and T nucleotide predominance also suggests that coronaviruses may share common evolutionary mechanisms, such as purifying selection and suppression of CpG dinucleotides, which could play a role in their ability to evade the human immune system. Phylogenetic analyses indicate that SARS-CoV-2 shares a high degree of similarity with coronaviruses found in bats, supporting the zoonotic origin theory and the possibility of transmission through intermediate hosts.
+
+The second graph (phylogenetic tree) represents the degree of genetic similarity and evolutionary relationships between different variants of the coronavirus identified in various countries. Branches that are closer together indicate greater genetic similarity between those variants, while longer and more separated branches suggest greater evolutionary divergence.
+
+There are groupings of countries due to the virus having primarily transmitted between geographically close nations, with similar variants. For example, variants from China, South Korea, Japan, and Vietnam cluster together due to their geographical proximity, as do variants from Spain, France, and Germany.
+
+However, there are also cases in the tree that do not follow a geographic pattern. This is because the phylogenetic tree reflects relationships based on the similarity of the viral genetic sequences, not necessarily geographical location. Additionally, the sequences analyzed for each country vary over time, leading to dispersion in the interpretation of the phylogenetic tree. The tree shows groups of similar variants in neighboring countries but also reflects evolutionary divergences and particular cases that do not conform to geographic patterns.
+
+
+Bibliography
+
+Chen, Z., Boon, S. S., Wang, M., & Chan, P. K. (2021). Genomic and evolutionary comparison between SARS-CoV-2 and other human coronaviruses. Journal of Virological Methods, 289, 114032. https://doi.org/10.1016/j.jviromet.2020.114032
+
+COVID-19 Map - Johns Hopkins Coronavirus Resource Center. (n.d.). Johns Hopkins Coronavirus Resource Center. Recuperado el 23 de abril de https://coronavirus.jhu.edu/map.html
+
+Edouard Mathieu, Hannah Ritchie, Lucas Rodés-Guirao, Cameron Appel, Charlie Giattino, Joe Hasell, Bobbie Macdonald, Saloni Dattani, Diana Beltekian, Esteban Ortiz-Ospina and Max Roser (2020) - "Coronavirus Pandemic (COVID-19)". Published online at OurWorldInData.org. Retrieved from: 'https://ourworldindata.org/coronavirus' [Online Resource]
+
+Guan, Y., Zheng, B., He, Y., Liu, X. L., Zhuang, Z., Cheung, Y. M., Luo, S., Li, P. H., Zhang, L. J., Guan, Y., Butt, K. M., Wong, K. H., Chan, K., Lim, W., Shortridge, K. F., Yuen, K., Peiris, J. S. M., & Poon, L. L. M. (2003). Isolation and Characterization of Viruses Related to the SARS Coronavirus from Animals in Southern China. Science, 302(5643), 276–278. https://doi.org/10.1126/science.1087139
+
+Lam, T. T., Jia, N., Zhang, Y., Shum, M. H., Jiang, J., Zhu, H., Tong, Y., Shi, Y., Ni, X., Liao, Y., Li, W., Jiang, B., Wei, W., Yuan, T., Zheng, K., Cui, X., Li, J., Pei, G., Xin, Q., . . . Cao, W. (2020). Identifying SARS-CoV-2-related coronaviruses in Malayan pangolins. Nature, 583(7815), 282–285. https://doi.org/10.1038/s41586-020-2169-0
+
+Luo, R., Delaunay‐Moisan, A., Timmis, K. N., & Danchin, A. (2021). SARS‐CoV‐2 biology and variants: anticipation of viral evolution and what needs to be done. Environmental Microbiology, 23(5), 2339–2363. https://doi.org/10.1111/1462-2920.15487
+
+Singh, D., & Yi, S. V. (2021). On the origin and evolution of SARS-CoV-2. Experimental and Molecular Medicine/Experimental and Molecular Medicine, 53(4), 537–547. https://doi.org/10.1038/s12276-021-00604-z
+
+Tan, C. C., Owen, C. J., Tham, C., Bertoletti, A., Van Dorp, L., & Balloux, F. (2021). Pre-existing T cell-mediated cross-reactivity to SARS-CoV-2 cannot solely be explained by prior exposure to endemic human coronaviruses. Infection, Genetics and Evolution, 95, 105075. https://doi.org/10.1016/j.meegid.2021.105075
+
+Zhou, P., Yang, X., Wang, X. G., Hu, B., Zhang, L., Zhang, W., Hao, R., Zhu, Y., Li, B., Huang, C., Chen, H. D., Chen, J., Luo, Y., Guo, H., Jiang, R., Liu, M. Q., Chen, Y., Shen, X., Wang, X., . . . Shi, Z. L. (2020). A pneumonia outbreak associated with a new coronavirus of probable bat origin. Nature, 579(7798), 270–273. https://doi.org/10.1038/s41586-020-2012-7
+
